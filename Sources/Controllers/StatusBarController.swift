@@ -197,22 +197,17 @@ private final class MenuNavigationRowView: NSView {
 class StatusBarController: NSObject, NSMenuDelegate {
     private enum DetailPanelKind: Equatable {
         case priceChart(GoldPriceSource)
-        case position
-        case tradeRecords
         case settings
         case alerts
         case percentageAlerts
-        case profitAlerts
         case extremePriceAlerts
     }
 
     private enum DeferredSubmenuKind: String {
         case priceChart
-        case positionChart
         case settings
         case alerts
         case percentageAlerts
-        case profitAlerts
         case extremePriceAlerts
     }
 
@@ -226,10 +221,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var menuIsOpen = false
     private var mainMenu: NSMenu?
     private var priceItems: [GoldPriceSource: NSMenuItem] = [:]
-    private var positionMenuItem: NSMenuItem?
     private var alertMenuItem: NSMenuItem?
     private var percentageAlertMenuItem: NSMenuItem?
-    private var profitAlertMenuItem: NSMenuItem?
     private var extremePriceAlertMenuItem: NSMenuItem?
     private var updateTimeMenuItem: NSMenuItem?
     private var submenuSources: [ObjectIdentifier: GoldPriceSource] = [:]
@@ -245,7 +238,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var mainPanelAnchorFrame: NSRect?
-    private let appVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "--"
     private var pendingPriceAlertStateNormalization = Set<String>()
     private var pendingPercentageAlertStateNormalization = Set<String>()
 
@@ -351,54 +343,10 @@ class StatusBarController: NSObject, NSMenuDelegate {
             ))
         }
 
-        let profitMode = settings.profitDisplay
-        let profitUsesColor = settings.statusBarProfitUsesColor
-        if profitMode != .off,
-           let pos = historyManager.position,
-           let posSource = pos.source,
-           let posInfo = dataService.allSourcePrices[posSource],
-           let cp = posInfo.priceDouble {
-            let p = pos.profit(currentPrice: cp)
-            let r = pos.profitRate(currentPrice: cp)
-            let signP = p >= 0 ? "+" : ""
-            let signR = r >= 0 ? "+" : ""
-            switch profitMode {
-            case .amount:
-                let profitText = "\(signP)\(String(format: "%.2f", p))"
-                attributedTitle.append(NSAttributedString(string: "  ", attributes: defaultAttributes))
-                attributedTitle.append(NSAttributedString(
-                    string: profitText,
-                    attributes: profitUsesColor
-                        ? statusBarHighlightAttributes(base: defaultAttributes, isPositive: p >= 0)
-                        : defaultAttributes
-                ))
-            case .rate:
-                let profitText = "\(signR)\(String(format: "%.2f", r))%"
-                attributedTitle.append(NSAttributedString(string: "  ", attributes: defaultAttributes))
-                attributedTitle.append(NSAttributedString(
-                    string: profitText,
-                    attributes: profitUsesColor
-                        ? statusBarHighlightAttributes(base: defaultAttributes, isPositive: r >= 0)
-                        : defaultAttributes
-                ))
-            case .both:
-                let profitText = "\(signP)\(String(format: "%.2f", p)) (\(signR)\(String(format: "%.2f", r))%)"
-                attributedTitle.append(NSAttributedString(string: "  ", attributes: defaultAttributes))
-                attributedTitle.append(NSAttributedString(
-                    string: profitText,
-                    attributes: profitUsesColor
-                        ? statusBarHighlightAttributes(base: defaultAttributes, isPositive: p >= 0)
-                        : defaultAttributes
-                ))
-            case .off:
-                break
-            }
-        }
 
         button.attributedTitle = attributedTitle
         checkPriceAlerts()
         checkPercentageAlerts()
-        checkProfitAlerts()
         checkExtremePriceAlerts()
     }
 
@@ -475,12 +423,9 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private func syncPanelModel() {
         panelModel.currentSource = dataService.currentSource
         panelModel.allSourcePrices = dataService.allSourcePrices
-        panelModel.position = historyManager.position
         panelModel.lastUpdateTime = dataService.lastUpdateTime
-        panelModel.appVersion = appVersion
         panelModel.alertCount = historyManager.alerts.count
         panelModel.percentageAlertCount = historyManager.percentageAlerts.count
-        panelModel.profitAlertCount = historyManager.profitAlerts.count
         panelModel.extremePriceAlertEnabledCount = historyManager.extremePriceAlertConfigs.filter { $0.isEnabled }.count
     }
 
@@ -538,12 +483,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
             onPriceHover: { [weak self] source in
                 self?.showHoverDetail(.priceChart(source))
             },
-            onPositionHover: { [weak self] in
-                self?.showHoverDetail(.position)
-            },
-            onTradeRecordsHover: { [weak self] in
-                self?.showHoverDetail(.tradeRecords)
-            },
             onSettingsClick: { [weak self] in
                 self?.showHoverDetail(.settings)
             },
@@ -552,9 +491,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
             },
             onPercentageAlertsClick: { [weak self] in
                 self?.showHoverDetail(.percentageAlerts)
-            },
-            onProfitAlertsClick: { [weak self] in
-                self?.showHoverDetail(.profitAlerts)
             },
             onExtremePriceAlertsClick: { [weak self] in
                 self?.showHoverDetail(.extremePriceAlerts)
@@ -663,11 +599,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         switch activeDetailPanelKind {
         case .priceChart(let source):
             refreshPriceChildPanel(source: source)
-        case .position:
-            refreshPositionChildPanel()
-        case .tradeRecords:
-            break
-        case .settings, .alerts, .percentageAlerts, .profitAlerts, .extremePriceAlerts:
+        case .settings, .alerts, .percentageAlerts, .extremePriceAlerts:
             break
         }
     }
@@ -800,12 +732,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         case .priceChart(let source):
             guard let view = makePriceChartView(for: source) else { return nil }
             return (view, preferredSize(for: view))
-        case .position:
-            let view = makePositionDetailView()
-            return (view, preferredSize(for: view))
-        case .tradeRecords:
-            let view = makeTradeRecordsDetailView()
-            return (view, preferredSize(for: view))
         case .settings:
             let view = SettingsEditorView(
                 currentSource: dataService.currentSource,
@@ -828,9 +754,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
             return (view, preferredSize(for: view))
         case .percentageAlerts:
             let view = PercentageAlertEditorView()
-            return (view, preferredSize(for: view))
-        case .profitAlerts:
-            let view = ProfitAlertEditorView()
             return (view, preferredSize(for: view))
         case .extremePriceAlerts:
             let view = ExtremePriceAlertEditorView()
@@ -861,54 +784,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         return ChartMenuItemView(source: source, info: info, records: records)
     }
 
-    private func makePositionDetailView() -> NSView {
-        let currentPrice = historyManager.position
-            .flatMap(\.source)
-            .flatMap { dataService.allSourcePrices[$0]?.priceDouble }
-        let view = PositionDetailPanelView(
-            position: historyManager.position,
-            currentPrice: currentPrice,
-            allSources: GoldPriceSource.domesticSources,
-            sourcePrices: dataService.allSourcePrices
-        )
-
-        if let position = historyManager.position,
-           let source = position.source,
-           let currentPrice = dataService.allSourcePrices[source]?.priceDouble {
-            if usesOfficialIntradayChart(for: source) {
-                let latestSeries = officialChartService.latestSeries(for: source)
-                let profitRecords = latestSeries.map { buildProfitRecords(for: position, records: $0.records) } ?? []
-                view.updateChart(
-                    position: position,
-                    currentPrice: currentPrice,
-                    profitRecords: profitRecords,
-                    isLoading: latestSeries == nil,
-                    emptyMessage: latestSeries == nil ? nil : domesticChartErrors[source]
-                )
-                requestDomesticPositionChartUpdate(detailView: view, position: position, source: source, currentPrice: currentPrice)
-            } else {
-                let records = historyManager.getTodayRecords(for: source.rawValue)
-                view.updateChart(
-                    position: position,
-                    currentPrice: currentPrice,
-                    profitRecords: buildProfitRecords(for: position, records: records)
-                )
-            }
-        } else {
-            view.updateChart(position: nil, currentPrice: nil, profitRecords: [])
-        }
-
-        return view
-    }
-
-    private func makeTradeRecordsDetailView() -> NSView {
-        let editorView = PositionEditorView(
-            position: historyManager.position,
-            allSources: GoldPriceSource.domesticSources,
-            sourcePrices: dataService.allSourcePrices
-        )
-        return editorView
-    }
 
     private func refreshPriceChildPanel(source: GoldPriceSource) {
         guard let childPanelWindow,
@@ -942,48 +817,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         positionChildPanel(window: childPanelWindow, size: size)
     }
 
-    private func refreshPositionChildPanel() {
-        guard let childPanelWindow, childPanelWindow.isVisible else { return }
-        guard case .position = activeDetailPanelKind else { return }
-
-        guard let detailView = (childPanelWindow.contentView as? PopupCardContainerView)?.hostedContentView as? PositionDetailPanelView else {
-            showChildPanel(for: .position)
-            return
-        }
-
-        if let position = historyManager.position,
-           let source = position.source,
-           let currentPrice = dataService.allSourcePrices[source]?.priceDouble {
-            if usesOfficialIntradayChart(for: source) {
-                let latestSeries = officialChartService.latestSeries(for: source)
-                let profitRecords = latestSeries.map { buildProfitRecords(for: position, records: $0.records) } ?? []
-                detailView.updateChart(
-                    position: position,
-                    currentPrice: currentPrice,
-                    profitRecords: profitRecords,
-                    isLoading: latestSeries == nil,
-                    emptyMessage: latestSeries == nil ? nil : domesticChartErrors[source]
-                )
-                requestDomesticPositionChartUpdate(detailView: detailView, position: position, source: source, currentPrice: currentPrice)
-            } else {
-                let records = historyManager.getTodayRecords(for: source.rawValue)
-                detailView.updateChart(
-                    position: position,
-                    currentPrice: currentPrice,
-                    profitRecords: buildProfitRecords(for: position, records: records)
-                )
-            }
-        } else {
-            detailView.updateChart(position: nil, currentPrice: nil, profitRecords: [])
-        }
-
-        let size = preferredSize(for: detailView)
-        if let container = childPanelWindow.contentView as? PopupCardContainerView {
-            container.frame.size = size
-        }
-        childPanelWindow.setContentSize(size)
-        positionChildPanel(window: childPanelWindow, size: size)
-    }
 
     private func preferredSize(for view: NSView) -> NSSize {
         view.layoutSubtreeIfNeeded()
@@ -1010,10 +843,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.autoenablesItems = false
         priceItems.removeAll()
-        positionMenuItem = nil
         alertMenuItem = nil
         percentageAlertMenuItem = nil
-        profitAlertMenuItem = nil
         extremePriceAlertMenuItem = nil
         updateTimeMenuItem = nil
         submenuSources.removeAll()
@@ -1045,9 +876,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // Position (我的持仓)
-        menu.addItem(makePositionMenuItem())
-
-        menu.addItem(NSMenuItem.separator())
 
         // Settings (偏好设置)
         menu.addItem(makeSettingsMenuItem())
@@ -1057,9 +885,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         // Percentage Alerts (涨跌幅提醒)
         menu.addItem(makePercentageAlertMenuItem())
-
-        // Profit Alerts (收益提醒)
-        menu.addItem(makeProfitAlertMenuItem())
 
         // Extreme Price Alerts (新高新低提醒)
         menu.addItem(makeExtremePriceAlertMenuItem())
@@ -1093,26 +918,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func makePositionMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "我的持仓", action: nil, keyEquivalent: "")
-
-        if let pos = historyManager.position {
-            var currentPrice: Double? = nil
-            if let source = pos.source, let info = dataService.allSourcePrices[source] {
-                currentPrice = info.priceDouble
-            }
-            let displayView = PositionDisplayView(position: pos, currentPrice: currentPrice)
-            item.view = displayView
-        } else {
-            item.attributedTitle = NSAttributedString(string: "我的持仓  未设置 →", attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: NSColor.secondaryLabelColor
-            ])
-        }
-        item.submenu = makeDeferredSubmenu(kind: .positionChart)
-        positionMenuItem = item
-        return item
-    }
 
     private func makeSettingsMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "偏好设置", action: nil, keyEquivalent: "")
@@ -1141,15 +946,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func makeProfitAlertMenuItem() -> NSMenuItem {
-        let alertCount = historyManager.profitAlerts.count
-        let title = alertCount > 0 ? "收益提醒 (\(alertCount))" : "收益提醒"
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.view = MenuNavigationRowView(title: title)
-        item.submenu = makeDeferredSubmenu(kind: .profitAlerts)
-        profitAlertMenuItem = item
-        return item
-    }
 
     private func makeExtremePriceAlertMenuItem() -> NSMenuItem {
         let enabledCount = historyManager.extremePriceAlertConfigs.filter { $0.isEnabled }.count
@@ -1176,10 +972,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
         syncPanelModel()
         refreshVisiblePanels()
         refreshPriceItems()
-        refreshPositionItem()
         refreshAlertMenuItemTitle()
         refreshPercentageAlertMenuItemTitle()
-        refreshProfitAlertMenuItemTitle()
         refreshExtremePriceAlertMenuItemTitle()
         refreshUpdateTimeItem()
         refreshOpenSubmenusIfNeeded()
@@ -1197,27 +991,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func refreshPositionItem() {
-        guard let item = positionMenuItem else { return }
-
-        if let position = historyManager.position {
-            let currentPrice = position.source.flatMap { source in
-                dataService.allSourcePrices[source]?.priceDouble
-            }
-            item.attributedTitle = nil
-            if let view = item.view as? PositionDisplayView {
-                view.update(position: position, currentPrice: currentPrice)
-            } else {
-                item.view = PositionDisplayView(position: position, currentPrice: currentPrice)
-            }
-        } else {
-            item.view = nil
-            item.attributedTitle = NSAttributedString(string: "我的持仓  未设置 →", attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: NSColor.secondaryLabelColor
-            ])
-        }
-    }
 
     private func refreshAlertMenuItemTitle() {
         guard let item = alertMenuItem else { return }
@@ -1249,20 +1022,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func refreshProfitAlertMenuItemTitle() {
-        guard let item = profitAlertMenuItem else { return }
-        let alertCount = historyManager.profitAlerts.count
-        let title = alertCount > 0 ? "收益提醒 (\(alertCount))" : "收益提醒"
-        item.title = title
-        if let view = item.view as? MenuNavigationRowView {
-            view.update(title: title)
-        } else {
-            item.attributedTitle = NSAttributedString(string: title, attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: NSColor.labelColor
-            ])
-        }
-    }
 
     private func refreshExtremePriceAlertMenuItemTitle() {
         guard let item = extremePriceAlertMenuItem else { return }
@@ -1302,9 +1061,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
             refreshPriceSubmenu(submenu, source: source)
         }
 
-        if let submenu = positionMenuItem?.submenu, !submenu.items.isEmpty {
-            refreshPositionSubmenu(submenu)
-        }
     }
 
     private func usesOfficialIntradayChart(for source: GoldPriceSource) -> Bool {
@@ -1346,42 +1102,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func refreshPositionSubmenu(_ menu: NSMenu) {
-        guard let position = historyManager.position,
-              let source = position.source,
-              let currentPrice = dataService.allSourcePrices[source]?.priceDouble else { return }
-        if usesOfficialIntradayChart(for: source) {
-            let latestSeries = officialChartService.latestSeries(for: source)
-            let chartProfitRecords = latestSeries.map { buildProfitRecords(for: position, records: $0.records) } ?? []
-            let emptyMessage = latestSeries == nil ? domesticChartErrors[source] : nil
-
-            if let chartView = menu.items.first?.view as? PositionChartMenuItemView {
-                chartView.update(
-                    position: position,
-                    currentPrice: currentPrice,
-                    profitRecords: chartProfitRecords,
-                    isLoading: latestSeries == nil && emptyMessage == nil,
-                    emptyMessage: emptyMessage
-                )
-            } else {
-                populatePositionSubmenu(menu)
-                return
-            }
-
-            if latestSeries != nil || domesticChartErrors[source] == nil {
-                requestDomesticPositionChartUpdate(menu: menu, position: position, source: source, currentPrice: currentPrice)
-            }
-            return
-        }
-
-        let records = historyManager.getTodayRecords(for: source.rawValue)
-        let profitRecords = buildProfitRecords(for: position, records: records)
-        if let chartView = menu.items.first?.view as? PositionChartMenuItemView {
-            chartView.update(position: position, currentPrice: currentPrice, profitRecords: profitRecords)
-        } else {
-            populatePositionSubmenu(menu)
-        }
-    }
 
     private func populatePriceSubmenu(_ menu: NSMenu, source: GoldPriceSource) {
         menu.removeAllItems()
@@ -1414,54 +1134,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func populatePositionSubmenu(_ menu: NSMenu) {
-        menu.removeAllItems()
-
-        if let pos = historyManager.position,
-           let source = pos.source,
-           let info = dataService.allSourcePrices[source],
-           let currentPrice = info.priceDouble {
-            let chartView: PositionChartMenuItemView
-
-            if usesOfficialIntradayChart(for: source) {
-                let latestSeries = officialChartService.latestSeries(for: source)
-                let chartProfitRecords = latestSeries.map { buildProfitRecords(for: pos, records: $0.records) } ?? []
-                chartView = PositionChartMenuItemView(
-                    position: pos,
-                    currentPrice: currentPrice,
-                    profitRecords: chartProfitRecords,
-                    isLoading: latestSeries == nil,
-                    emptyMessage: latestSeries == nil ? nil : domesticChartErrors[source]
-                )
-            } else {
-                let records = historyManager.getTodayRecords(for: source.rawValue)
-                let profitRecords = buildProfitRecords(for: pos, records: records)
-                chartView = PositionChartMenuItemView(
-                    position: pos,
-                    currentPrice: currentPrice,
-                    profitRecords: profitRecords
-                )
-            }
-
-            let chartItem = NSMenuItem()
-            chartItem.view = chartView
-            menu.addItem(chartItem)
-            menu.addItem(.separator())
-
-            if usesOfficialIntradayChart(for: source) {
-                requestDomesticPositionChartUpdate(menu: menu, position: pos, source: source, currentPrice: currentPrice)
-            }
-        }
-
-        let editorView = PositionEditorView(
-            position: historyManager.position,
-            allSources: GoldPriceSource.domesticSources,
-            sourcePrices: dataService.allSourcePrices
-        )
-        let editorItem = NSMenuItem()
-        editorItem.view = editorView
-        menu.addItem(editorItem)
-    }
 
     private func populateSettingsSubmenu(_ menu: NSMenu) {
         menu.removeAllItems()
@@ -1498,13 +1170,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(alertItem)
     }
 
-    private func populateProfitAlertsSubmenu(_ menu: NSMenu) {
-        menu.removeAllItems()
-        let alertView = ProfitAlertEditorView()
-        let alertItem = NSMenuItem()
-        alertItem.view = alertView
-        menu.addItem(alertItem)
-    }
 
     private func populateExtremePriceAlertsSubmenu(_ menu: NSMenu) {
         menu.removeAllItems()
@@ -1553,45 +1218,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func requestDomesticPositionChartUpdate(
-        menu: NSMenu,
-        position: PositionInfo,
-        source: GoldPriceSource,
-        currentPrice: Double
-    ) {
-        officialChartService.fetchIntradaySeries(for: source) { [weak self, weak menu] result in
-            guard let self, let menu else { return }
-            guard let chartView = menu.items.first?.view as? PositionChartMenuItemView else { return }
-
-            switch result {
-            case .success(let series):
-                self.domesticChartErrors[source] = nil
-                chartView.update(
-                    position: position,
-                    currentPrice: currentPrice,
-                    profitRecords: self.buildProfitRecords(for: position, records: series.records)
-                )
-            case .failure(let error):
-                self.domesticChartErrors[source] = error.localizedDescription
-                if let latestSeries = self.officialChartService.latestSeries(for: source) {
-                    chartView.update(
-                        position: position,
-                        currentPrice: currentPrice,
-                        profitRecords: self.buildProfitRecords(for: position, records: latestSeries.records)
-                    )
-                } else {
-                    chartView.update(
-                        position: position,
-                        currentPrice: currentPrice,
-                        profitRecords: [],
-                        isLoading: false,
-                        emptyMessage: error.localizedDescription
-                    )
-                }
-            }
-        }
-    }
-
     private func requestDomesticPriceChartUpdate(view: ChartMenuItemView, source: GoldPriceSource) {
         officialChartService.fetchIntradaySeries(for: source) { [weak self, weak view] result in
             guard let self, let view else { return }
@@ -1632,86 +1258,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func requestDomesticPositionChartUpdate(
-        view: PositionChartMenuItemView,
-        position: PositionInfo,
-        source: GoldPriceSource,
-        currentPrice: Double
-    ) {
-        officialChartService.fetchIntradaySeries(for: source) { [weak self, weak view] result in
-            guard let self, let view else { return }
-
-            switch result {
-            case .success(let series):
-                self.domesticChartErrors[source] = nil
-                view.update(
-                    position: position,
-                    currentPrice: currentPrice,
-                    profitRecords: self.buildProfitRecords(for: position, records: series.records)
-                )
-            case .failure(let error):
-                self.domesticChartErrors[source] = error.localizedDescription
-                if let latestSeries = self.officialChartService.latestSeries(for: source) {
-                    view.update(
-                        position: position,
-                        currentPrice: currentPrice,
-                        profitRecords: self.buildProfitRecords(for: position, records: latestSeries.records)
-                    )
-                } else {
-                    view.update(
-                        position: position,
-                        currentPrice: currentPrice,
-                        profitRecords: [],
-                        isLoading: false,
-                        emptyMessage: error.localizedDescription
-                    )
-                }
-            }
-
-            self.refreshChildPanelSizeIfNeeded()
-        }
-    }
-
-    private func requestDomesticPositionChartUpdate(
-        detailView: PositionDetailPanelView,
-        position: PositionInfo,
-        source: GoldPriceSource,
-        currentPrice: Double
-    ) {
-        officialChartService.fetchIntradaySeries(for: source) { [weak self, weak detailView] result in
-            guard let self, let detailView else { return }
-
-            switch result {
-            case .success(let series):
-                self.domesticChartErrors[source] = nil
-                detailView.updateChart(
-                    position: position,
-                    currentPrice: currentPrice,
-                    profitRecords: self.buildProfitRecords(for: position, records: series.records)
-                )
-            case .failure(let error):
-                self.domesticChartErrors[source] = error.localizedDescription
-                if let latestSeries = self.officialChartService.latestSeries(for: source) {
-                    detailView.updateChart(
-                        position: position,
-                        currentPrice: currentPrice,
-                        profitRecords: self.buildProfitRecords(for: position, records: latestSeries.records)
-                    )
-                } else {
-                    detailView.updateChart(
-                        position: position,
-                        currentPrice: currentPrice,
-                        profitRecords: [],
-                        isLoading: false,
-                        emptyMessage: error.localizedDescription
-                    )
-                }
-            }
-
-            self.refreshChildPanelSizeIfNeeded()
-        }
-    }
-
     private func refreshChildPanelSizeIfNeeded() {
         guard let childPanelWindow,
               childPanelWindow.isVisible,
@@ -1722,11 +1268,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         positionChildPanel(window: childPanelWindow, size: size)
     }
 
-    private func buildProfitRecords(for position: PositionInfo, records: [PriceRecord]) -> [PriceRecord] {
-        records.map { record in
-            PriceRecord(timestamp: record.timestamp, price: position.profit(currentPrice: record.price))
-        }
-    }
 
     private func checkPriceAlerts() {
         let now = Date()
@@ -1964,49 +1505,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         return "\(alert.sourceRawValue)|\(alert.metric.rawValue)|\(directionKey)"
     }
 
-    private func checkProfitAlerts() {
-        let now = Date()
-        guard let position = historyManager.position,
-              let source = position.source,
-              let currentPrice = dataService.allSourcePrices[source]?.priceDouble else { return }
-
-        let currentProfit = position.profit(currentPrice: currentPrice)
-        let currentRate = position.profitRate(currentPrice: currentPrice)
-        var alerts = historyManager.profitAlerts
-        var didUpdateAlerts = false
-
-        for index in alerts.indices {
-            let alert = alerts[index]
-            guard alert.sourceRawValue == source.rawValue else { continue }
-
-            let conditionMet = alert.isConditionMet(currentProfit: currentProfit, currentRate: currentRate)
-            let shouldNotify = shouldNotify(
-                repeatMode: alert.repeatMode,
-                conditionMet: conditionMet,
-                wasConditionMet: alert.wasConditionMet,
-                lastTriggeredAt: alert.lastTriggeredAt,
-                interval: alert.repeatInterval,
-                now: now
-            )
-
-            if shouldNotify {
-                alerts[index].triggered = true
-                alerts[index].lastTriggeredAt = now
-                sendProfitAlertNotification(alert: alert, currentProfit: currentProfit, currentRate: currentRate)
-                didUpdateAlerts = true
-            }
-
-            if alerts[index].wasConditionMet != conditionMet {
-                alerts[index].wasConditionMet = conditionMet
-                didUpdateAlerts = true
-            }
-        }
-
-        if didUpdateAlerts {
-            historyManager.saveProfitAlerts(alerts)
-            refreshMenuContent()
-        }
-    }
 
     private func shouldNotify(
         repeatMode: AlertRepeatMode,
@@ -2093,40 +1591,6 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func sendProfitAlertNotification(alert: ProfitAlert, currentProfit: Double, currentRate: Double) {
-        let thresholdText = alert.comparatorText
-        let currentText: String
-
-        switch alert.metric {
-        case .amount:
-            currentText = "\(currentProfit >= 0 ? "+" : "")\(String(format: "%.2f", currentProfit))元"
-        case .rate:
-            currentText = "\(currentRate >= 0 ? "+" : "")\(String(format: "%.2f", currentRate))%"
-        }
-
-        guard Bundle.main.bundleIdentifier != nil else {
-            NSLog("[GoldPrice] Profit alert triggered: \(alert.sourceRawValue) \(alert.kind.rawValue)\(alert.metric.shortTitle) \(thresholdText), current: \(currentText)")
-            return
-        }
-
-        let content = UNMutableNotificationContent()
-        content.title = "\(alert.sourceRawValue) \(alert.kind.rawValue)\(alert.metric.shortTitle) \(thresholdText)"
-        content.body = "当前\(alert.kind.rawValue)\(alert.metric.shortTitle)：\(currentText)"
-        content.sound = .default
-
-        let request = UNNotificationRequest(
-            identifier: "profit-alert-\(alert.id)",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                NSLog("[GoldPrice] 收益提醒通知发送失败: \(error.localizedDescription)")
-            } else {
-                NSLog("[GoldPrice] 收益提醒通知已发送: \(content.title)")
-            }
-        }
-    }
 
     // MARK: - Extreme Price Alerts (新高新低)
 
@@ -2258,16 +1722,12 @@ class StatusBarController: NSObject, NSMenuDelegate {
         case .priceChart:
             guard let source = submenuSources[ObjectIdentifier(menu)] else { return }
             populatePriceSubmenu(menu, source: source)
-        case .positionChart:
-            populatePositionSubmenu(menu)
         case .settings:
             populateSettingsSubmenu(menu)
         case .alerts:
             populateAlertsSubmenu(menu)
         case .percentageAlerts:
             populatePercentageAlertsSubmenu(menu)
-        case .profitAlerts:
-            populateProfitAlertsSubmenu(menu)
         case .extremePriceAlerts:
             populateExtremePriceAlertsSubmenu(menu)
         }

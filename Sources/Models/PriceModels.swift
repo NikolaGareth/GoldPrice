@@ -82,15 +82,6 @@ struct PriceRecord: Codable {
     let price: Double
 }
 
-// MARK: - Position (持仓)
-
-enum ProfitDisplayMode: String, Codable, CaseIterable {
-    case off = "不显示"
-    case amount = "收益金额"
-    case rate = "收益率"
-    case both = "都显示"
-}
-
 enum DailyChangeDisplayMode: String, Codable, CaseIterable {
     case off = "不显示"
     case amount = "涨跌金额"
@@ -101,7 +92,6 @@ enum DailyChangeDisplayMode: String, Codable, CaseIterable {
 enum DynamicIslandDisplayItem: String, Codable, CaseIterable, Identifiable {
     case jdZsFinance
     case londonGold
-    case profit
 
     var id: String { rawValue }
 
@@ -111,8 +101,6 @@ enum DynamicIslandDisplayItem: String, Codable, CaseIterable, Identifiable {
             return GoldPriceSource.jdZsFinance.rawValue
         case .londonGold:
             return GoldPriceSource.londonGold.rawValue
-        case .profit:
-            return "收益"
         }
     }
 
@@ -122,8 +110,6 @@ enum DynamicIslandDisplayItem: String, Codable, CaseIterable, Identifiable {
             return .jdZsFinance
         case .londonGold:
             return .londonGold
-        case .profit:
-            return nil
         }
     }
 
@@ -161,18 +147,15 @@ struct AppSettings: Codable, Equatable {
     static let defaultStatusBarSourceRawValues = [GoldPriceSource.jdZsFinance.rawValue]
     static let defaultDynamicIslandItemRawValues = [
         DynamicIslandDisplayItem.jdZsFinance.rawValue,
-        DynamicIslandDisplayItem.londonGold.rawValue,
-        DynamicIslandDisplayItem.profit.rawValue
+        DynamicIslandDisplayItem.londonGold.rawValue
     ]
 
     enum CodingKeys: String, CodingKey {
         case statusBarIcon
         case statusBarSourceRawValues
         case statusBarSourceRawValue
-        case profitDisplay
         case statusBarPriceUsesDailyChangeColor
         case statusBarDailyChangeUsesColor
-        case statusBarProfitUsesColor
         case dailyChangeDisplay
         case refreshInterval
         case dynamicIslandEnabled
@@ -185,10 +168,8 @@ struct AppSettings: Codable, Equatable {
 
     var statusBarIcon: String = "🌕"
     var statusBarSourceRawValues: [String] = AppSettings.defaultStatusBarSourceRawValues
-    var profitDisplay: ProfitDisplayMode = .off
     var statusBarPriceUsesDailyChangeColor: Bool = false
     var statusBarDailyChangeUsesColor: Bool = true
-    var statusBarProfitUsesColor: Bool = true
     var dailyChangeDisplay: DailyChangeDisplayMode = .off
     var refreshInterval: Int = 5
     var dynamicIslandEnabled: Bool = false
@@ -201,10 +182,8 @@ struct AppSettings: Codable, Equatable {
     init(
         statusBarIcon: String = "🌕",
         statusBarSourceRawValues: [String] = AppSettings.defaultStatusBarSourceRawValues,
-        profitDisplay: ProfitDisplayMode = .off,
         statusBarPriceUsesDailyChangeColor: Bool = false,
         statusBarDailyChangeUsesColor: Bool = true,
-        statusBarProfitUsesColor: Bool = true,
         dailyChangeDisplay: DailyChangeDisplayMode = .off,
         refreshInterval: Int = 5,
         dynamicIslandEnabled: Bool = false,
@@ -216,10 +195,8 @@ struct AppSettings: Codable, Equatable {
     ) {
         self.statusBarIcon = statusBarIcon
         self.statusBarSourceRawValues = AppSettings.normalizedStatusBarSourceRawValues(statusBarSourceRawValues)
-        self.profitDisplay = profitDisplay
         self.statusBarPriceUsesDailyChangeColor = statusBarPriceUsesDailyChangeColor
         self.statusBarDailyChangeUsesColor = statusBarDailyChangeUsesColor
-        self.statusBarProfitUsesColor = statusBarProfitUsesColor
         self.dailyChangeDisplay = dailyChangeDisplay
         self.refreshInterval = max(1, refreshInterval)
         self.dynamicIslandEnabled = dynamicIslandEnabled
@@ -279,10 +256,8 @@ struct AppSettings: Codable, Equatable {
         } else {
             statusBarSourceRawValues = AppSettings.defaultStatusBarSourceRawValues
         }
-        profitDisplay = try container.decodeIfPresent(ProfitDisplayMode.self, forKey: .profitDisplay) ?? .off
         statusBarPriceUsesDailyChangeColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarPriceUsesDailyChangeColor) ?? false
         statusBarDailyChangeUsesColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarDailyChangeUsesColor) ?? true
-        statusBarProfitUsesColor = try container.decodeIfPresent(Bool.self, forKey: .statusBarProfitUsesColor) ?? true
         dailyChangeDisplay = try container.decodeIfPresent(DailyChangeDisplayMode.self, forKey: .dailyChangeDisplay) ?? .off
         refreshInterval = max(1, try container.decodeIfPresent(Int.self, forKey: .refreshInterval) ?? 5)
         dynamicIslandEnabled = try container.decodeIfPresent(Bool.self, forKey: .dynamicIslandEnabled) ?? false
@@ -303,10 +278,8 @@ struct AppSettings: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(statusBarIcon, forKey: .statusBarIcon)
         try container.encode(AppSettings.normalizedStatusBarSourceRawValues(statusBarSourceRawValues), forKey: .statusBarSourceRawValues)
-        try container.encode(profitDisplay, forKey: .profitDisplay)
         try container.encode(statusBarPriceUsesDailyChangeColor, forKey: .statusBarPriceUsesDailyChangeColor)
         try container.encode(statusBarDailyChangeUsesColor, forKey: .statusBarDailyChangeUsesColor)
-        try container.encode(statusBarProfitUsesColor, forKey: .statusBarProfitUsesColor)
         try container.encode(dailyChangeDisplay, forKey: .dailyChangeDisplay)
         try container.encode(refreshInterval, forKey: .refreshInterval)
         try container.encode(dynamicIslandEnabled, forKey: .dynamicIslandEnabled)
@@ -596,124 +569,6 @@ struct PercentageAlert: Codable, Equatable {
     }
 }
 
-// MARK: - Position (持仓)
-
-enum ProfitAlertKind: String, Codable, CaseIterable {
-    case profit = "浮盈"
-    case loss = "浮亏"
-}
-
-enum ProfitAlertMetric: String, Codable, CaseIterable {
-    case amount = "达到目标金额"
-    case rate = "达到目标百分比"
-
-    var shortTitle: String {
-        switch self {
-        case .amount:
-            return "金额"
-        case .rate:
-            return "百分比"
-        }
-    }
-}
-
-struct ProfitAlert: Codable, Equatable {
-    enum CodingKeys: String, CodingKey {
-        case id
-        case sourceRawValue
-        case kind
-        case metric
-        case targetValue
-        case triggered
-        case repeatMode
-        case repeatInterval
-        case lastTriggeredAt
-        case wasConditionMet
-    }
-
-    var id: String = UUID().uuidString
-    var sourceRawValue: String
-    var kind: ProfitAlertKind
-    var metric: ProfitAlertMetric
-    var targetValue: Double
-    var triggered: Bool = false
-    var repeatMode: AlertRepeatMode = .recurring
-    var repeatInterval: AlertRepeatInterval = .fiveMinutes
-    var lastTriggeredAt: Date? = nil
-    var wasConditionMet: Bool = false
-
-    init(
-        id: String = UUID().uuidString,
-        sourceRawValue: String,
-        kind: ProfitAlertKind,
-        metric: ProfitAlertMetric,
-        targetValue: Double,
-        triggered: Bool = false,
-        repeatMode: AlertRepeatMode = .recurring,
-        repeatInterval: AlertRepeatInterval = .fiveMinutes,
-        lastTriggeredAt: Date? = nil,
-        wasConditionMet: Bool = false
-    ) {
-        self.id = id
-        self.sourceRawValue = sourceRawValue
-        self.kind = kind
-        self.metric = metric
-        self.targetValue = abs(targetValue)
-        self.triggered = triggered
-        self.repeatMode = repeatMode
-        self.repeatInterval = repeatInterval
-        self.lastTriggeredAt = lastTriggeredAt
-        self.wasConditionMet = wasConditionMet
-    }
-
-    var source: GoldPriceSource? {
-        GoldPriceSource(rawValue: sourceRawValue)
-    }
-
-    var normalizedTargetValue: Double {
-        abs(targetValue)
-    }
-
-    var comparatorText: String {
-        switch metric {
-        case .amount:
-            return "≥ \(ProfitAlert.formattedAmount(normalizedTargetValue))"
-        case .rate:
-            return "≥ \(ProfitAlert.formattedPercent(normalizedTargetValue))"
-        }
-    }
-
-    var repeatSummary: String {
-        switch repeatMode {
-        case .rearmOnCross:
-            return "重新穿越阈值后再次提醒"
-        case .recurring:
-            return "满足条件后\(repeatInterval.description)提醒"
-        }
-    }
-
-    func isConditionMet(currentProfit: Double, currentRate: Double) -> Bool {
-        switch (kind, metric) {
-        case (.profit, .amount):
-            return currentProfit >= normalizedTargetValue
-        case (.loss, .amount):
-            return currentProfit <= -normalizedTargetValue
-        case (.profit, .rate):
-            return currentRate >= normalizedTargetValue
-        case (.loss, .rate):
-            return currentRate <= -normalizedTargetValue
-        }
-    }
-
-    static func formattedAmount(_ value: Double) -> String {
-        "\(String(format: "%.2f", value))元"
-    }
-
-    static func formattedPercent(_ value: Double) -> String {
-        "\(String(format: "%.2f", value))%"
-    }
-}
-
 // MARK: - Extreme Price Alert (新高新低提醒)
 
 struct ExtremePriceAlertConfig: Codable, Equatable {
@@ -730,472 +585,3 @@ struct ExtremePriceAlertConfig: Codable, Equatable {
     }
 }
 
-enum PositionFeeMode: String, Codable, CaseIterable {
-    case perGram = "每克固定"
-    case percentage = "百分比"
-
-    var inputUnit: String {
-        switch self {
-        case .perGram:
-            return "元/克"
-        case .percentage:
-            return "%"
-        }
-    }
-}
-
-enum PositionTransactionType: String, Codable, CaseIterable, Identifiable {
-    case buy = "加仓"
-    case sell = "减仓"
-
-    var id: String { rawValue }
-
-    var symbolName: String {
-        switch self {
-        case .buy: return "plus.circle.fill"
-        case .sell: return "minus.circle.fill"
-        }
-    }
-
-    var tintedColorName: String {
-        switch self {
-        case .buy: return "red"
-        case .sell: return "green"
-        }
-    }
-}
-
-struct PositionTransaction: Codable, Equatable, Identifiable {
-    enum CodingKeys: String, CodingKey {
-        case id
-        case date
-        case sourceRawValue
-        case typeRawValue
-        case grams
-        case price
-        case fee
-        case feeRate
-        case note
-    }
-
-    var id: String = UUID().uuidString
-    var date: Date
-    var sourceRawValue: String
-    var typeRawValue: String
-    var grams: Double
-    var price: Double
-    var fee: Double
-    var note: String
-
-    init(
-        id: String = UUID().uuidString,
-        date: Date = Date(),
-        sourceRawValue: String,
-        type: PositionTransactionType,
-        grams: Double,
-        price: Double,
-        fee: Double = 0,
-        note: String = ""
-    ) {
-        self.id = id
-        self.date = date
-        self.sourceRawValue = sourceRawValue
-        self.typeRawValue = type.rawValue
-        self.grams = max(0, grams)
-        self.price = max(0, price)
-        self.fee = max(0, fee)
-        self.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var source: GoldPriceSource? {
-        GoldPriceSource(rawValue: sourceRawValue)
-    }
-
-    var type: PositionTransactionType {
-        PositionTransactionType(rawValue: typeRawValue) ?? .buy
-    }
-
-    var grossAmount: Double {
-        grams * price
-    }
-
-    var feeRate: Double {
-        max(0, fee)
-    }
-
-    func feeAmount(referencePrice: Double? = nil) -> Double {
-        let pricingReference = max(0, referencePrice ?? price)
-        return grams * pricingReference * feeRate / 100
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
-        date = try container.decodeIfPresent(Date.self, forKey: .date) ?? Date()
-        sourceRawValue = try container.decode(String.self, forKey: .sourceRawValue)
-        typeRawValue = try container.decodeIfPresent(String.self, forKey: .typeRawValue) ?? PositionTransactionType.buy.rawValue
-        grams = max(0, try container.decodeIfPresent(Double.self, forKey: .grams) ?? 0)
-        price = max(0, try container.decodeIfPresent(Double.self, forKey: .price) ?? 0)
-        note = (try container.decodeIfPresent(String.self, forKey: .note) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let decodedFeeRate = try container.decodeIfPresent(Double.self, forKey: .feeRate) {
-            fee = max(0, decodedFeeRate)
-        } else {
-            let legacyFeeAmount = max(0, try container.decodeIfPresent(Double.self, forKey: .fee) ?? 0)
-            let tradeAmount = max(grams * price, 0.0000001)
-            fee = tradeAmount > 0 ? legacyFeeAmount / tradeAmount * 100 : 0
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(date, forKey: .date)
-        try container.encode(sourceRawValue, forKey: .sourceRawValue)
-        try container.encode(typeRawValue, forKey: .typeRawValue)
-        try container.encode(max(0, grams), forKey: .grams)
-        try container.encode(max(0, price), forKey: .price)
-        try container.encode(feeRate, forKey: .fee)
-        try container.encode(feeRate, forKey: .feeRate)
-        try container.encode(note.trimmingCharacters(in: .whitespacesAndNewlines), forKey: .note)
-    }
-}
-
-struct PositionPerformance: Equatable {
-    let source: GoldPriceSource
-    let currentGrams: Double
-    let currentPrincipalCostBasis: Double
-    let currentFeeCostBasis: Double
-    let currentFeeRate: Double
-    let currentCostBasis: Double
-    let avgCost: Double
-    let breakEvenPrice: Double
-    let realizedProfit: Double
-    let unrealizedProfit: Double
-    let cumulativeProfit: Double
-    let totalFees: Double
-    let buyAmount: Double
-    let sellAmount: Double
-    let transactions: [PositionTransaction]
-
-    func estimatedTodayProfit(currentPrice: Double, yesterdayPrice: Double) -> Double {
-        currentGrams * (currentPrice - yesterdayPrice)
-    }
-}
-
-enum PositionLedger {
-    static func summarize(
-        transactions: [PositionTransaction],
-        currentPrice: Double? = nil
-    ) -> PositionPerformance? {
-        let sorted = orderedTransactionsForLedger(transactions)
-
-        guard let source = sorted.compactMap(\.source).last else {
-            return nil
-        }
-
-        let validTransactions = sorted.filter {
-            $0.source == source && $0.grams > 0 && $0.price > 0
-        }
-
-        guard !validTransactions.isEmpty else {
-            return nil
-        }
-
-        var gramsHeld = 0.0
-        var principalCostBasis = 0.0
-        var heldFeeRateBasis = 0.0
-        var realizedProfit = 0.0
-        var totalFeeRateBasis = 0.0
-        var buyAmount = 0.0
-        var sellAmount = 0.0
-        let feeReferencePrice = max(currentPrice ?? validTransactions.last?.price ?? 0, 0)
-
-        for transaction in validTransactions {
-            switch transaction.type {
-            case .buy:
-                gramsHeld += transaction.grams
-                principalCostBasis += transaction.grossAmount
-                heldFeeRateBasis += transaction.grams * transaction.feeRate
-                totalFeeRateBasis += transaction.grams * transaction.feeRate
-                buyAmount += transaction.grossAmount
-            case .sell:
-                let sellableGrams = min(transaction.grams, gramsHeld)
-                guard sellableGrams > 0 else { continue }
-
-                let averagePrincipalCost = gramsHeld > 0 ? principalCostBasis / gramsHeld : 0
-                let averageFeeRate = gramsHeld > 0 ? heldFeeRateBasis / gramsHeld : 0
-                let removedPrincipalCost = averagePrincipalCost * sellableGrams
-                let removedFeeRateBasis = averageFeeRate * sellableGrams
-                let removedFeeCost = feeReferencePrice * removedFeeRateBasis / 100
-                let removedCostBasis = removedPrincipalCost + removedFeeCost
-                let sellFeeAmount = sellableGrams * feeReferencePrice * transaction.feeRate / 100
-                let netProceeds = (sellableGrams * transaction.price) - sellFeeAmount
-
-                realizedProfit += netProceeds - removedCostBasis
-                sellAmount += sellableGrams * transaction.price
-                totalFeeRateBasis += sellableGrams * transaction.feeRate
-                gramsHeld -= sellableGrams
-                principalCostBasis -= removedPrincipalCost
-                heldFeeRateBasis -= removedFeeRateBasis
-
-                if gramsHeld <= 0.0000001 {
-                    gramsHeld = 0
-                    principalCostBasis = 0
-                    heldFeeRateBasis = 0
-                }
-            }
-        }
-
-        guard gramsHeld > 0 || realizedProfit != 0 || !validTransactions.isEmpty else {
-            return nil
-        }
-
-        let currentFeeCostBasis = feeReferencePrice * heldFeeRateBasis / 100
-        let currentFeeRate = gramsHeld > 0 ? heldFeeRateBasis / gramsHeld : 0
-        let totalFees = feeReferencePrice * totalFeeRateBasis / 100
-        let currentCostBasis = principalCostBasis + currentFeeCostBasis
-        let averageCost = gramsHeld > 0 ? principalCostBasis / gramsHeld : 0
-        let breakEvenPrice = gramsHeld > 0 ? currentCostBasis / gramsHeld : 0
-        let marketValue = currentPrice.map { $0 * gramsHeld } ?? 0
-        let unrealizedProfit = currentPrice.map { _ in marketValue - currentCostBasis } ?? 0
-
-        return PositionPerformance(
-            source: source,
-            currentGrams: gramsHeld,
-            currentPrincipalCostBasis: principalCostBasis,
-            currentFeeCostBasis: currentFeeCostBasis,
-            currentFeeRate: currentFeeRate,
-            currentCostBasis: currentCostBasis,
-            avgCost: averageCost,
-            breakEvenPrice: breakEvenPrice,
-            realizedProfit: realizedProfit,
-            unrealizedProfit: unrealizedProfit,
-            cumulativeProfit: realizedProfit + unrealizedProfit,
-            totalFees: totalFees,
-            buyAmount: buyAmount,
-            sellAmount: sellAmount,
-            transactions: validTransactions
-        )
-    }
-
-    static func positionInfo(from transactions: [PositionTransaction]) -> PositionInfo? {
-        guard let summary = summarize(transactions: transactions) else {
-            return nil
-        }
-
-        guard summary.currentGrams > 0 else {
-            return nil
-        }
-
-        return PositionInfo(
-            grams: summary.currentGrams,
-            avgPrice: summary.avgCost,
-            sourceRawValue: summary.source.rawValue,
-            feeMode: .percentage,
-            feeValue: summary.currentFeeRate
-        )
-    }
-
-    private static func orderedTransactionsForLedger(_ transactions: [PositionTransaction]) -> [PositionTransaction] {
-        guard transactions.count > 1 else { return transactions }
-
-        var isAscending = true
-        var isDescending = true
-
-        for index in 1..<transactions.count {
-            let previous = transactions[index - 1]
-            let current = transactions[index]
-            if transactionComesBefore(previous, current) {
-                isDescending = false
-            } else if transactionComesBefore(current, previous) {
-                isAscending = false
-            }
-
-            if !isAscending && !isDescending {
-                return transactions.sorted(by: transactionComesBefore)
-            }
-        }
-
-        if isAscending {
-            return transactions
-        }
-
-        return Array(transactions.reversed())
-    }
-
-    private static func transactionComesBefore(_ lhs: PositionTransaction, _ rhs: PositionTransaction) -> Bool {
-        if lhs.date == rhs.date {
-            return lhs.id < rhs.id
-        }
-        return lhs.date < rhs.date
-    }
-}
-
-struct PositionInfo: Codable, Equatable {
-    enum CodingKeys: String, CodingKey {
-        case lots
-        case grams
-        case avgPrice
-        case sourceRawValue
-        case feeModeRawValue
-        case feeValue
-        case totalFee
-    }
-
-    struct Lot: Codable, Equatable, Identifiable {
-        var id: String
-        var grams: Double
-        var price: Double
-
-        init(id: String = UUID().uuidString, grams: Double, price: Double) {
-            self.id = id
-            self.grams = grams
-            self.price = price
-        }
-    }
-
-    var lots: [Lot]
-    var sourceRawValue: String
-    var feeModeRawValue: String
-    var feeValue: Double
-
-    init(
-        lots: [Lot],
-        sourceRawValue: String,
-        feeMode: PositionFeeMode = .percentage,
-        feeValue: Double = 0
-    ) {
-        self.lots = lots.filter { $0.grams > 0 && $0.price > 0 }
-        self.sourceRawValue = sourceRawValue
-        self.feeModeRawValue = feeMode.rawValue
-        self.feeValue = max(0, feeValue)
-    }
-
-    init(
-        grams: Double,
-        avgPrice: Double,
-        sourceRawValue: String,
-        feeMode: PositionFeeMode = .percentage,
-        feeValue: Double = 0
-    ) {
-        self.init(
-            lots: [Lot(grams: grams, price: avgPrice)],
-            sourceRawValue: sourceRawValue,
-            feeMode: feeMode,
-            feeValue: feeValue
-        )
-    }
-
-    var grams: Double {
-        lots.reduce(0) { $0 + $1.grams }
-    }
-
-    var purchaseCost: Double {
-        lots.reduce(0) { $0 + ($1.grams * $1.price) }
-    }
-
-    func totalCost(currentPrice: Double? = nil) -> Double {
-        purchaseCost + totalFee(referencePrice: currentPrice)
-    }
-
-    var totalCost: Double {
-        totalCost(currentPrice: nil)
-    }
-
-    var avgPrice: Double {
-        let totalGrams = grams
-        guard totalGrams > 0 else { return 0 }
-        return purchaseCost / totalGrams
-    }
-
-    func breakEvenPrice(currentPrice: Double? = nil) -> Double {
-        let totalGrams = grams
-        guard totalGrams > 0 else { return 0 }
-        return totalCost(currentPrice: currentPrice) / totalGrams
-    }
-
-    var breakEvenPrice: Double {
-        breakEvenPrice(currentPrice: nil)
-    }
-
-    var source: GoldPriceSource? {
-        GoldPriceSource(rawValue: sourceRawValue)
-    }
-
-    var feeMode: PositionFeeMode {
-        PositionFeeMode(rawValue: feeModeRawValue) ?? .percentage
-    }
-
-    func totalFee(referencePrice: Double? = nil) -> Double {
-        switch feeMode {
-        case .perGram:
-            return max(0, feeValue) * grams
-        case .percentage:
-            let pricingReference = max(0, referencePrice ?? avgPrice)
-            return grams * pricingReference * max(0, feeValue) / 100
-        }
-    }
-
-    var totalFee: Double {
-        totalFee(referencePrice: nil)
-    }
-
-    func profit(currentPrice: Double) -> Double {
-        (currentPrice * grams) - totalCost(currentPrice: currentPrice)
-    }
-
-    func profitRate(currentPrice: Double) -> Double {
-        let liveTotalCost = totalCost(currentPrice: currentPrice)
-        guard liveTotalCost > 0 else { return 0 }
-        return profit(currentPrice: currentPrice) / liveTotalCost * 100
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        sourceRawValue = try container.decode(String.self, forKey: .sourceRawValue)
-
-        if let decodedLots = try container.decodeIfPresent([Lot].self, forKey: .lots), !decodedLots.isEmpty {
-            lots = decodedLots.filter { $0.grams > 0 && $0.price > 0 }
-        } else {
-            let legacyGrams = try container.decode(Double.self, forKey: .grams)
-            let legacyAvgPrice = try container.decode(Double.self, forKey: .avgPrice)
-            lots = [Lot(grams: legacyGrams, price: legacyAvgPrice)].filter { $0.grams > 0 && $0.price > 0 }
-        }
-
-        let decodedTotalGrams = lots.reduce(0) { $0 + $1.grams }
-        let decodedPurchaseCost = lots.reduce(0) { $0 + ($1.grams * $1.price) }
-        let decodedAvgPrice = decodedTotalGrams > 0 ? decodedPurchaseCost / decodedTotalGrams : 0
-
-        if let decodedFeeMode = try container.decodeIfPresent(String.self, forKey: .feeModeRawValue),
-           let feeMode = PositionFeeMode(rawValue: decodedFeeMode) {
-            let decodedFeeValue = max(0, try container.decodeIfPresent(Double.self, forKey: .feeValue) ?? 0)
-            switch feeMode {
-            case .percentage:
-                feeModeRawValue = PositionFeeMode.percentage.rawValue
-                feeValue = decodedFeeValue
-            case .perGram:
-                feeModeRawValue = PositionFeeMode.percentage.rawValue
-                feeValue = decodedAvgPrice > 0 ? decodedFeeValue / decodedAvgPrice * 100 : 0
-            }
-        } else if let decodedFeeValue = try container.decodeIfPresent(Double.self, forKey: .feeValue) {
-            feeModeRawValue = PositionFeeMode.percentage.rawValue
-            feeValue = decodedAvgPrice > 0 ? max(0, decodedFeeValue) / decodedAvgPrice * 100 : 0
-        } else {
-            let legacyTotalFee = max(0, try container.decodeIfPresent(Double.self, forKey: .totalFee) ?? 0)
-            feeModeRawValue = PositionFeeMode.percentage.rawValue
-            feeValue = decodedPurchaseCost > 0 ? legacyTotalFee / decodedPurchaseCost * 100 : 0
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(lots, forKey: .lots)
-        try container.encode(grams, forKey: .grams)
-        try container.encode(avgPrice, forKey: .avgPrice)
-        try container.encode(sourceRawValue, forKey: .sourceRawValue)
-        try container.encode(PositionFeeMode.percentage.rawValue, forKey: .feeModeRawValue)
-        try container.encode(max(0, feeValue), forKey: .feeValue)
-        try container.encode(totalFee, forKey: .totalFee)
-    }
-}

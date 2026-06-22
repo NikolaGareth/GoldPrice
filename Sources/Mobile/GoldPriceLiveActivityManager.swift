@@ -23,7 +23,7 @@ final class GoldPriceLiveActivityManager {
     func sync(
         settings: AppSettings,
         prices: [GoldPriceSource: PriceInfo],
-        performance: PositionPerformance?,
+        performance: Any?,
         updatedAt: Date,
         force: Bool = false
     ) {
@@ -50,7 +50,6 @@ final class GoldPriceLiveActivityManager {
         let states = makeStates(
             items: settings.dynamicIslandItems,
             prices: prices,
-            performance: performance,
             refreshInterval: refreshInterval,
             updatedAt: updatedAt
         )
@@ -118,33 +117,23 @@ final class GoldPriceLiveActivityManager {
     private func makeStates(
         items: [DynamicIslandDisplayItem],
         prices: [GoldPriceSource: PriceInfo],
-        performance: PositionPerformance?,
         refreshInterval: Int,
         updatedAt: Date
     ) -> [GoldPriceLiveActivityAttributes.ContentState] {
         items.compactMap { item in
-            switch item {
-            case .jdZsFinance, .londonGold:
-                guard
-                    let source = item.source,
-                    let info = prices[source],
-                    info.priceDouble != nil
-                else {
-                    return nil
-                }
-                return makePriceState(
-                    source: source,
-                    info: info,
-                    refreshInterval: refreshInterval,
-                    updatedAt: updatedAt
-                )
-            case .profit:
-                return makeProfitState(
-                    performance: performance,
-                    refreshInterval: refreshInterval,
-                    updatedAt: updatedAt
-                )
+            guard
+                let source = item.source,
+                let info = prices[source],
+                info.priceDouble != nil
+            else {
+                return nil
             }
+            return makePriceState(
+                source: source,
+                info: info,
+                refreshInterval: refreshInterval,
+                updatedAt: updatedAt
+            )
         }
     }
 
@@ -161,7 +150,7 @@ final class GoldPriceLiveActivityManager {
         )
     }
 
-    private func makeState(
+    private func makePriceState(
         source: GoldPriceSource,
         info: PriceInfo,
         refreshInterval: Int,
@@ -185,60 +174,6 @@ final class GoldPriceLiveActivityManager {
         )
     }
 
-    private func makePriceState(
-        source: GoldPriceSource,
-        info: PriceInfo,
-        refreshInterval: Int,
-        updatedAt: Date
-    ) -> GoldPriceLiveActivityAttributes.ContentState {
-        makeState(
-            source: source,
-            info: info,
-            refreshInterval: refreshInterval,
-            updatedAt: updatedAt
-        )
-    }
-
-    private func makeProfitState(
-        performance: PositionPerformance?,
-        refreshInterval: Int,
-        updatedAt: Date
-    ) -> GoldPriceLiveActivityAttributes.ContentState {
-        guard let performance else {
-            return GoldPriceLiveActivityAttributes.ContentState(
-                sourceName: "持仓收益",
-                shortSourceName: "收益",
-                priceText: "--",
-                unitText: "元",
-                changeText: "暂无持仓",
-                changeRateText: "--",
-                refreshText: refreshDescription(seconds: refreshInterval),
-                updatedAt: updatedAt,
-                isUp: true
-            )
-        }
-
-        return GoldPriceLiveActivityAttributes.ContentState(
-            sourceName: "持仓收益",
-            shortSourceName: "收益",
-            priceText: signedNumberText(performance.cumulativeProfit),
-            unitText: "元",
-            changeText: "持仓 \(numberText(performance.currentGrams, digits: 4))克",
-            changeRateText: "均价 \(numberText(performance.avgCost))",
-            refreshText: refreshDescription(seconds: refreshInterval),
-            updatedAt: updatedAt,
-            isUp: performance.cumulativeProfit >= 0
-        )
-    }
-
-    private func signedNumberText(_ value: Double) -> String {
-        "\(value >= 0 ? "+" : "")\(numberText(value))"
-    }
-
-    private func numberText(_ value: Double, digits: Int = 2) -> String {
-        String(format: "%.\(digits)f", value)
-    }
-
     private func refreshDescription(seconds: Int) -> String {
         if seconds < 60 {
             return "\(seconds) 秒刷新"
@@ -257,7 +192,7 @@ final class GoldPriceLiveActivityManager {
     func sync(
         settings: AppSettings,
         prices: [GoldPriceSource: PriceInfo],
-        performance: PositionPerformance?,
+        performance: Any?,
         updatedAt: Date,
         force: Bool = false
     ) {}

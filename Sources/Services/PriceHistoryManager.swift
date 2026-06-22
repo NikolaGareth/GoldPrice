@@ -6,19 +6,13 @@ class PriceHistoryManager {
     private var history: [String: [PriceRecord]] = [:]
     private let queue = DispatchQueue(label: "com.goldprice.history", qos: .userInitiated)
     private let fileURL: URL
-    private let positionURL: URL
-    private let positionTransactionsURL: URL
     private let settingsURL: URL
     private let alertsURL: URL
     private let percentageAlertsURL: URL
-    private let profitAlertsURL: URL
     private let extremePriceAlertConfigsURL: URL
-    private(set) var position: PositionInfo?
-    private(set) var positionTransactions: [PositionTransaction] = []
     private(set) var settings: AppSettings = AppSettings()
     private(set) var alerts: [PriceAlert] = []
     private(set) var percentageAlerts: [PercentageAlert] = []
-    private(set) var profitAlerts: [ProfitAlert] = []
     private(set) var extremePriceAlertConfigs: [ExtremePriceAlertConfig] = []
 
     private init() {
@@ -26,21 +20,14 @@ class PriceHistoryManager {
         let dir = appSupport.appendingPathComponent("GoldPrice", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         fileURL = dir.appendingPathComponent("priceHistory.json")
-        positionURL = dir.appendingPathComponent("position.json")
-        positionTransactionsURL = dir.appendingPathComponent("positionTransactions.json")
         settingsURL = dir.appendingPathComponent("settings.json")
         alertsURL = dir.appendingPathComponent("alerts.json")
         percentageAlertsURL = dir.appendingPathComponent("percentageAlerts.json")
-        profitAlertsURL = dir.appendingPathComponent("profitAlerts.json")
         extremePriceAlertConfigsURL = dir.appendingPathComponent("extremePriceAlertConfigs.json")
         loadHistory()
-        loadPosition()
-        loadPositionTransactions()
-        migrateLegacyPositionToTransactionsIfNeeded()
         loadSettings()
         loadAlerts()
         loadPercentageAlerts()
-        loadProfitAlerts()
         loadExtremePriceAlertConfigs()
         migrateFromUserDefaultsIfNeeded()
         cleanupAllSources()
@@ -89,66 +76,6 @@ class PriceHistoryManager {
                 .sorted { $0.timestamp < $1.timestamp }
             let prices = records.map { $0.price }
             return (prices.max(), prices.min())
-        }
-    }
-
-    // MARK: - Position
-
-    func savePosition(_ pos: PositionInfo) {
-        position = pos
-        if let data = try? JSONEncoder().encode(pos) {
-            try? data.write(to: positionURL, options: .atomic)
-        }
-        savePositionTransactions(makeLegacyTransactions(from: pos))
-    }
-
-    func clearPosition() {
-        position = nil
-        try? FileManager.default.removeItem(at: positionURL)
-        positionTransactions = []
-        try? FileManager.default.removeItem(at: positionTransactionsURL)
-    }
-
-    private func loadPosition() {
-        guard let data = try? Data(contentsOf: positionURL) else { return }
-        position = try? JSONDecoder().decode(PositionInfo.self, from: data)
-    }
-
-    func savePositionTransactions(_ transactions: [PositionTransaction]) {
-        let normalized = transactions.sorted {
-            if $0.date == $1.date {
-                return $0.id > $1.id
-            }
-            return $0.date > $1.date
-        }
-        positionTransactions = normalized
-
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
-        if let data = try? encoder.encode(normalized) {
-            try? data.write(to: positionTransactionsURL, options: .atomic)
-        }
-
-        synchronizePositionCacheFromTransactions()
-    }
-
-    func addPositionTransaction(_ transaction: PositionTransaction) {
-        var updated = positionTransactions
-        updated.append(transaction)
-        savePositionTransactions(updated)
-    }
-
-    func removePositionTransaction(id: String) {
-        positionTransactions.removeAll { $0.id == id }
-        savePositionTransactions(positionTransactions)
-    }
-
-    private func loadPositionTransactions() {
-        guard let data = try? Data(contentsOf: positionTransactionsURL) else { return }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .secondsSince1970
-        if let loaded = try? decoder.decode([PositionTransaction].self, from: data) {
-            positionTransactions = loaded
         }
     }
 
@@ -246,41 +173,6 @@ class PriceHistoryManager {
         }
     }
 
-    // MARK: - Profit Alerts
-
-    func saveProfitAlerts(_ list: [ProfitAlert]) {
-        profitAlerts = list
-        if let data = try? JSONEncoder().encode(list) {
-            try? data.write(to: profitAlertsURL, options: .atomic)
-        }
-    }
-
-    func addProfitAlert(_ alert: ProfitAlert) {
-        profitAlerts.append(alert)
-        saveProfitAlerts(profitAlerts)
-    }
-
-    func removeProfitAlert(id: String) {
-        profitAlerts.removeAll { $0.id == id }
-        saveProfitAlerts(profitAlerts)
-    }
-
-    func resetProfitAlert(id: String) {
-        if let idx = profitAlerts.firstIndex(where: { $0.id == id }) {
-            profitAlerts[idx].triggered = false
-            profitAlerts[idx].lastTriggeredAt = nil
-            profitAlerts[idx].wasConditionMet = false
-            saveProfitAlerts(profitAlerts)
-        }
-    }
-
-    private func loadProfitAlerts() {
-        guard let data = try? Data(contentsOf: profitAlertsURL) else { return }
-        if let loaded = try? JSONDecoder().decode([ProfitAlert].self, from: data) {
-            profitAlerts = loaded
-        }
-    }
-
     // MARK: - Extreme Price Alert Configs
 
     func saveExtremePriceAlertConfigs(_ list: [ExtremePriceAlertConfig]) {
@@ -352,46 +244,5 @@ class PriceHistoryManager {
     private func cleanupOldData(for sourceKey: String) {
         let startOfDay = Calendar.current.startOfDay(for: Date())
         history[sourceKey] = history[sourceKey]?.filter { $0.timestamp >= startOfDay }
-    }
-
-    private func synchronizePositionCacheFromTransactions() {
-        guard let cachedPosition = PositionLedger.positionInfo(from: positionTransactions) else {
-            position = nil
-            try? FileManager.default.removeItem(at: positionURL)
-            return
-        }
-
-        position = cachedPosition
-        if let data = try? JSONEncoder().encode(cachedPosition) {
-            try? data.write(to: positionURL, options: .atomic)
-        }
-    }
-
-    private func migrateLegacyPositionToTransactionsIfNeeded() {
-        guard positionTransactions.isEmpty, let position else { return }
-        savePositionTransactions(makeLegacyTransactions(from: position))
-    }
-
-    private func makeLegacyTransactions(from position: PositionInfo) -> [PositionTransaction] {
-        let baseDate = Date().addingTimeInterval(-Double(position.lots.count) * 60)
-        return position.lots.enumerated().map { index, lot in
-            let feeRate: Double
-            switch position.feeMode {
-            case .percentage:
-                feeRate = position.feeValue
-            case .perGram:
-                feeRate = lot.price > 0 ? position.feeValue / lot.price * 100 : 0
-            }
-
-            return PositionTransaction(
-                date: baseDate.addingTimeInterval(Double(index) * 60),
-                sourceRawValue: position.sourceRawValue,
-                type: .buy,
-                grams: lot.grams,
-                price: lot.price,
-                fee: feeRate,
-                note: "由旧版持仓迁移"
-            )
-        }
     }
 }
