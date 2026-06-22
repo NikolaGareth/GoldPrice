@@ -5,12 +5,13 @@ import Foundation
 enum GoldPriceSource: String, CaseIterable {
     case jdZsFinance = "京东浙商"
     case jdMsFinance = "京东民生"
+    case sgeAu9999 = "上海金交所"
     case londonGold = "伦敦金"
     case newyorkGold = "纽约金"
 
     var unit: String {
         switch self {
-        case .jdZsFinance, .jdMsFinance:
+        case .jdZsFinance, .jdMsFinance, .sgeAu9999:
             return "元/克"
         case .londonGold, .newyorkGold:
             return "$/oz"
@@ -19,7 +20,7 @@ enum GoldPriceSource: String, CaseIterable {
 
     var isDomestic: Bool {
         switch self {
-        case .jdZsFinance, .jdMsFinance: return true
+        case .jdZsFinance, .jdMsFinance, .sgeAu9999: return true
         case .londonGold, .newyorkGold: return false
         }
     }
@@ -38,6 +39,8 @@ enum GoldPriceSource: String, CaseIterable {
             return "浙商"
         case .jdMsFinance:
             return "民生"
+        case .sgeAu9999:
+            return "上金所"
         case .londonGold:
             return "伦敦"
         case .newyorkGold:
@@ -91,6 +94,7 @@ enum DailyChangeDisplayMode: String, Codable, CaseIterable {
 
 enum DynamicIslandDisplayItem: String, Codable, CaseIterable, Identifiable {
     case jdZsFinance
+    case sgeAu9999
     case londonGold
 
     var id: String { rawValue }
@@ -99,6 +103,8 @@ enum DynamicIslandDisplayItem: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .jdZsFinance:
             return GoldPriceSource.jdZsFinance.rawValue
+        case .sgeAu9999:
+            return GoldPriceSource.sgeAu9999.rawValue
         case .londonGold:
             return GoldPriceSource.londonGold.rawValue
         }
@@ -108,6 +114,8 @@ enum DynamicIslandDisplayItem: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .jdZsFinance:
             return .jdZsFinance
+        case .sgeAu9999:
+            return .sgeAu9999
         case .londonGold:
             return .londonGold
         }
@@ -117,6 +125,8 @@ enum DynamicIslandDisplayItem: String, Codable, CaseIterable, Identifiable {
         switch source {
         case .jdZsFinance:
             return .jdZsFinance
+        case .sgeAu9999:
+            return .sgeAu9999
         case .londonGold:
             return .londonGold
         case .jdMsFinance, .newyorkGold:

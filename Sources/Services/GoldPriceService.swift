@@ -76,6 +76,23 @@ class GoldPriceService: ObservableObject {
         }
 
         group.enter()
+        fetchSGEGoldPrice { [weak self] info in
+            DispatchQueue.main.async {
+                guard let self = self else {
+                    group.leave()
+                    return
+                }
+                if generation == self.fetchGeneration, let info {
+                    snapshot[.sgeAu9999] = info
+                    if let p = info.priceDouble {
+                        self.historyManager.recordPrice(p, for: GoldPriceSource.sgeAu9999.rawValue)
+                    }
+                }
+                group.leave()
+            }
+        }
+
+        group.enter()
         fetchInternationalGold { [weak self] results in
             DispatchQueue.main.async {
                 guard let self = self else {
@@ -372,6 +389,126 @@ class GoldPriceService: ObservableObject {
                 info.dayLow = String(format: "%.2f", p)
             }
         }
+    }
+
+    // MARK: - Domestic: Shanghai Gold Exchange (Au99.99)
+
+    private func fetchSGEGoldPrice(completion: @escaping (PriceInfo?) -> Void) {
+        guard let url = URL(string: "https://www.sge.com.cn/graph/quotations") else {
+            completion(nil)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://www.sge.com.cn/", forHTTPHeaderField: "Referer")
+        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        request.httpBody = "instid=Au99.99".data(using: .utf8)
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+            guard let self = self, error == nil, let data = data else {
+                self?.fetchSGEYesterdayPrice(currentInfo: nil, completion: completion)
+                return
+            }
+
+            do {
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    self.fetchSGEYesterdayPrice(currentInfo: nil, completion: completion)
+                    return
+                }
+
+                let prices = json["data"] as? [String] ?? []
+                // Take the last non-zero price
+                let currentPrice = prices.reversed().compactMap { Double($0) }.first { $0 > 0 }
+                guard let currentPrice else {
+                    self.fetchSGEYesterdayPrice(currentInfo: nil, completion: completion)
+                    return
+                }
+
+                var info = PriceInfo()
+                info.price = String(format: "%.2f", currentPrice)
+
+                if let minVal = json["min"] as? Double, minVal > 0 {
+                    info.dayLow = String(format: "%.2f", minVal)
+                } else if let minVal = json["min"] as? String, let v = Double(minVal), v > 0 {
+                    info.dayLow = String(format: "%.2f", v)
+                }
+                if let maxVal = json["max"] as? Double, maxVal > 0 {
+                    info.dayHigh = String(format: "%.2f", maxVal)
+                } else if let maxVal = json["max"] as? String, let v = Double(maxVal), v > 0 {
+                    info.dayHigh = String(format: "%.2f", v)
+                }
+
+                // Record intraday series from the minute-by-minute data
+                if let times = json["times"] as? [String] {
+                    let records = zip(times, prices).compactMap { (timeStr, priceStr) -> PriceRecord? in
+                        guard let price = Double(priceStr), price > 0 else { return nil }
+                        let cal = Calendar.current
+                        let now = Date()
+                        let comps = timeStr.split(separator: ":").compactMap { Int($0) }
+                        guard comps.count == 2 else { return nil }
+                        guard let date = cal.date(bySettingHour: comps[0], minute: comps[1], second: 0, of: now) else { return nil }
+                        return PriceRecord(timestamp: date, price: price)
+                    }
+                    self.historyManager.recordPrices(records, for: GoldPriceSource.sgeAu9999.rawValue)
+                }
+
+                self.fetchSGEYesterdayPrice(currentInfo: info, completion: completion)
+            } catch {
+                self.fetchSGEYesterdayPrice(currentInfo: nil, completion: completion)
+            }
+        }.resume()
+    }
+
+    private func fetchSGEYesterdayPrice(currentInfo: PriceInfo?, completion: @escaping (PriceInfo?) -> Void) {
+        guard var info = currentInfo,
+              let currentPrice = info.priceDouble,
+              let url = URL(string: "https://www.sge.com.cn/graph/Dailyhq") else {
+            completion(currentInfo)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://www.sge.com.cn/sjzx/mrhq", forHTTPHeaderField: "Referer")
+        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        request.httpBody = "instid=Au99.99".data(using: .utf8)
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard error == nil,
+                  let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let timeArray = json["time"] as? [[Any]],
+                  let lastRow = timeArray.last,
+                  lastRow.count >= 3 else {
+                completion(info)
+                return
+            }
+
+            let yesterdayClose: Double?
+            if let v = lastRow[2] as? Double {
+                yesterdayClose = v
+            } else if let s = lastRow[2] as? String {
+                yesterdayClose = Double(s)
+            } else {
+                yesterdayClose = nil
+            }
+
+            if let yp = yesterdayClose, yp > 0 {
+                info.yesterdayPrice = String(format: "%.2f", yp)
+                let change = currentPrice - yp
+                let changePercent = change / yp * 100
+                let sign = change >= 0 ? "+" : ""
+                info.changeAmount = "\(sign)\(String(format: "%.2f", change))"
+                info.changeRate = "\(sign)\(String(format: "%.2f", changePercent))%"
+            }
+
+            completion(info)
+        }.resume()
     }
 
     deinit {

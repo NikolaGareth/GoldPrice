@@ -148,7 +148,7 @@ final class OfficialIntradayChartService {
                 return nil
             }
             return URLRequest(url: url)
-        case .londonGold, .newyorkGold:
+        case .londonGold, .newyorkGold, .sgeAu9999:
             return nil
         }
     }
