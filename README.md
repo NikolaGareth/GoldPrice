@@ -86,7 +86,3 @@ bash build.sh
 - **Combine 框架** - 响应式数据绑定与自动 UI 更新
 - **文件持久化** - 数据存储在 Application Support 目录，debug/release 一致
 - **网络适配** - 智能处理不同 API 的数据格式和编码（JSON / GB18030）
-
-## 许可证
-
-MIT License
